@@ -43,6 +43,12 @@ interface OtherDead {
 	[playerId: number]: boolean; // isTalking
 }
 
+function getGhostAmbience(): ArrayBuffer {
+	// load ambience content
+	let audioFile: Blob;
+	return new FileReader().readAsArrayBuffer(audioFile);
+}
+
 function calculateVoiceAudio(state: AmongUsState, settings: ISettings, me: Player, other: Player, gain: GainNode, pan: PannerNode): void {
 	const audioContext = pan.context;
 	pan.positionZ.setValueAtTime(-0.5, audioContext.currentTime);
@@ -269,6 +275,21 @@ const Voice: React.FC = function () {
 						onVoiceStop: () => setTalking(false),
 						stereo: settingsRef.current.enableSpatialAudio
 					});
+
+					/*
+					setup ghost ambience
+					*/
+					var audioData = getGhostAmbience();
+					var ambientSource = context.createBufferSource();
+
+					context.decodeAudioData(audioData, function(buffer) {
+						ambientSource.buffer = buffer;
+				
+						ambientSource.connect(context.destination);
+						ambientSource.loop = true;
+					  },
+				
+					  function(e){ console.log("Error with decoding audio data" + e.err); });
 
 					const setTalking = (talking: boolean) => {
 						setSocketPlayerIds(socketPlayerIds => {
