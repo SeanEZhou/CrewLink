@@ -7,6 +7,7 @@ import Peer from 'simple-peer';
 import { ipcRenderer, remote } from 'electron';
 import VAD from './vad';
 import { ISettings } from '../common/ISettings';
+import fs from 'fs';
 
 export interface ExtendedAudioElement extends HTMLAudioElement {
 	setSinkId: (sinkId: string) => Promise<void>;
@@ -41,12 +42,6 @@ interface OtherTalking {
 
 interface OtherDead {
 	[playerId: number]: boolean; // isTalking
-}
-
-function getGhostAmbience(): ArrayBuffer {
-	// load ambience content
-	let audioFile: Blob;
-	return new FileReader().readAsArrayBuffer(audioFile);
 }
 
 function calculateVoiceAudio(state: AmongUsState, settings: ISettings, me: Player, other: Player, gain: GainNode, pan: PannerNode): void {
@@ -93,6 +88,14 @@ function calculateVoiceAudio(state: AmongUsState, settings: ISettings, me: Playe
 	}
 }
 
+function toArrayBuffer(buf: Buffer) {
+	var ab = new ArrayBuffer(buf.length);
+	var view = new Uint8Array(ab);
+	for (var i = 0; i < buf.length; ++i) {
+		view[i] = buf[i];
+	}
+	return ab;
+}
 
 const Voice: React.FC = function () {
 	const [settings] = useContext(SettingsContext);
@@ -109,6 +112,15 @@ const Voice: React.FC = function () {
 
 	const [deafenedState, setDeafened] = useState(false);
 	const [connected, setConnected] = useState(false);
+
+	// 313: Load "Boo" audio file
+	var booFile: any = null;
+	if (fs.existsSync("static/reverb.ogx"))
+		booFile = fs.readFileSync('static/reverb.ogx');
+	else if (fs.existsSync("resources/static/reverb.ogx"))
+		booFile = fs.readFileSync('resources/static/reverb.ogx');
+	else
+		console.log("ERROR: Boo audio file not found");
 
 	// Handle pushToTalk, if set
 	useEffect(() => {
@@ -269,27 +281,25 @@ const Voice: React.FC = function () {
 
 					source.connect(pan);
 					pan.connect(gain);
+
+					// Setup ghost ambience
+					var ambientSource = context.createBufferSource();
+
+					context.decodeAudioData(toArrayBuffer(booFile), buffer => {
+						ambientSource.buffer = buffer;
+						// ambientSource.connect(context);
+						ambientSource.connect(context.destination);
+						ambientSource.loop = true;
+					}, e =>
+						console.log("Error with decoding audio data" + e)
+					);
+
 					// Source -> pan -> gain -> VAD -> destination
 					VAD(context, gain, context.destination, {
 						onVoiceStart: () => setTalking(true),
 						onVoiceStop: () => setTalking(false),
 						stereo: settingsRef.current.enableSpatialAudio
 					});
-
-					/*
-					setup ghost ambience
-					*/
-					var audioData = getGhostAmbience();
-					var ambientSource = context.createBufferSource();
-
-					context.decodeAudioData(audioData, function(buffer) {
-						ambientSource.buffer = buffer;
-				
-						ambientSource.connect(context.destination);
-						ambientSource.loop = true;
-					  },
-				
-					  function(e){ console.log("Error with decoding audio data" + e.err); });
 
 					const setTalking = (talking: boolean) => {
 						setSocketPlayerIds(socketPlayerIds => {
